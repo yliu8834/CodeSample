@@ -1,0 +1,293 @@
+---
+title: "Group 8 Final Code Demonstration"
+author: "STATS 101A Group 8"
+date: "2018/3/22"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Data cleaning (NOTICE: A different approach will be used for the testing dataset)
+
+
+```{r data_cleaning}
+setwd("~/Downloads/STATS 101A")
+happy<-read.table("Happiness.txt",header=T)
+library(dplyr)
+
+#First, eliminate all the cases where Happy Value is missing
+happy1 <- happy %>% filter(Happy!=8&Happy!=9)
+
+#Change all the undefined values into NA
+happy1[(happy1$Household==8 | happy1$Household==9 | 
+          happy1$Household==0),]$Household<-NA
+happy1[(happy1$Health==8 | happy1$Health==9 | happy1$Health==0),]$Health<-NA
+happy1[(happy1$OwnHome==8 | happy1$OwnHome==9 | happy1$OwnHome==0),]$OwnHome<-NA
+happy1[(happy1$Instagram==8 | happy1$Instagram==9 | happy1$Instagram==0),]$Instagram<-NA
+
+happy1[(happy1$Marital==9),]$Marital<-NA
+happy1[(happy1$Age==98|happy1$Age==99),]$Age<-NA
+happy1[(happy1$Children==9),]$Children<-NA
+happy1[(happy1$Education==98 | happy1$Education==99 | happy1$Education==97),]$Education<-NA
+happy1[(happy1$JobSat==8 | happy1$JobSat==9 | happy1$JobSat==0),]$JobSat<-NA
+happy1[(happy1$Income==999999 | happy1$Income==999998 | happy1$Income==0),]$Income<-NA
+happy1[(happy1$WorkHrs==999 | happy1$WorkHrs==998 | happy1$WorkHrs==-1),]$WorkHrs<-NA
+```
+
+## 2. Producing Models with Different Filled Dataset
+
+
+```{r }
+# Simulate average R-square
+record<-rep(NA,200)
+record.coeff<-matrix(NA,nrow=200,ncol=13)
+
+
+# Prepare avaliable data list
+columnsneedfixed<-1:12 #Children
+
+#generate a list with all avaiable numbers with the same Happy Value
+hsublist1<-list()
+hsublist2<-list()
+hsublist3<-list()
+
+for (i in 1:3){
+  hv<-happy1[happy1$Happy==i,]
+  hsublist<-list()
+  for (h in columnsneedfixed){
+  hsubcol=hv[[h]]
+  hsublist[[h]]<-hsubcol[is.na(hsubcol)==FALSE]
+  if (i==1){
+    hsublist1<-hsublist
+  }else if (i==2){
+    hsublist2<-hsublist
+  }else{
+    hsublist3<-hsublist
+  }
+}
+}
+
+#List used to save the Models:
+models<-list()
+
+
+set.seed(7) # For reproductivity
+for (s in 1:200){
+expandhappy2<-happy1
+
+#Go through each row to fill in the value
+for (i in 1:nrow(expandhappy2)){
+  # Find the subgroup with the same happy level
+  if (expandhappy2[i,13]==1){
+    tempsub=hsublist1
+  }else if  (expandhappy2[i,13]==2){
+    tempsub=hsublist2
+  }else{
+    tempsub=hsublist3
+  }
+  
+  #Fill in NAs with random valid entry from the corresponding column in the subgroup
+  for (j in columnsneedfixed){
+    if (is.na(expandhappy2[i,j])){
+      expandhappy2[i,j]=sample(tempsub[[j]],size=1)
+    }
+  }
+}
+
+#Data Treatment for Transformation: Add 1 to children
+expandhappy2$Children<-expandhappy2$Children+1
+#Data Treatment for Transformation: Change 0 Workhrs to 0.1 for transformation
+expandhappy2$WorkHrs[expandhappy2$WorkHrs==0]<-0.1
+#Data Treatment for Transformation: Change 0 Education to 0.1 for transformation
+expandhappy2$Education[expandhappy2$Education==0]<-0.1
+
+
+# Construct the model
+m1<-with(expandhappy2,lm(Happy~Household+Health+OwnHome+Instagram+
+                           Marital+Sex+Age+Children+Education+JobSat+Income+WorkHrs))
+# Save the summary of model
+summ1<-summary(m1)
+
+# Record the R-square and the co-efficients
+record[s]<-summ1$adj.r.squared
+record.coeff[s,]<-summ1$coefficients[,1]
+
+# Save the model 
+models[[s]]<-expandhappy2
+}
+```
+
+## Demonstration: Distribution of Coefficients
+
+```{r}
+# Plot the distributions of all the coefficients from simulation
+par(mfrow=c(4,3))
+par(mar=c(2,2,2,2))
+for (i in 1:12){
+  s<-paste("Distribution of estimated beta",as.character(i))
+  plot(density(record.coeff[,i]),main=s)
+}
+```
+
+## Demonstration: Mean Adjusted R sqaure
+
+```{r}
+# Average: R^2
+meanr<-mean(record)
+mean(record)
+```
+
+## Demonstration: Distribution of Adjusted R Square
+
+```{r}
+plot(density(record))
+```
+
+## Model Selection
+
+```{r}
+#get the model with r square close to the mean R square
+min=1
+for (i in 2:200){
+  if (abs(record[i]-meanr)<abs(record[min]-meanr)){
+    min=i
+  }
+}
+```
+
+## Illustration: Selected Full Model(Model B)
+
+$\hat{Happy}=0.9821-0.04877*Household+0.1842*Health+0.1058*OwnHome+0.07017*Instagram+0.05692*Marital+0.02008*Sex+0.00097*Age+0.1179*Children-0.00437*Education+0.1325*JobSat-0.000002*Income-0.00403*WorkHrs$
+
+```{r}
+# Get the dataset for illustration purpose
+demo<-models[[min]]
+modeldemo<-with(demo,lm(Happy~Household+Health+OwnHome+Instagram+
+                          Marital+Sex+Age+Children+Education+
+                          JobSat+Income+WorkHrs))
+
+summary(modeldemo)
+```
+
+## Plot: Full Model
+
+```{r}
+par(mfrow=c(2,2))
+plot(modeldemo)
+```
+
+## Transformation of Model (Rejected after our analysis)
+
+$\hat{Happy}=0.9821-0.04877*Household^{0.7389}+0.1842*Health^{-0.2865}+0.1058*OwnHome^{-1.6347}+0.07017*Instagram^{3.5317}+0.05692*Marital^{0.3273}+0.02008*Sex+0.00097*Age^{0.3273}+0.1179*log(Children)-0.00437*Education^{1.221}+0.1325*JobSat^{0.2074}-0.000002*Income^{0.1921}-0.00403*WorkHrs$
+
+```{r}
+library(alr3)
+t_demo_power<-powerTransform(cbind(Happy,Household,Health,OwnHome,Instagram,
+                          Marital,Sex,Age,Children,Education,
+                          JobSat,Income,WorkHrs)~1,data=demo)
+summary(t_demo_power)
+t_Happy=demo$Happy^0.7389
+t_Household=demo$Household^(-0.2865)
+t_Health=demo$Health^0.4839
+t_OwnHome=demo$OwnHome^(-1.6347)
+t_Instagram=demo$Instagram^3.5317
+t_Marital=demo$Marital^0.0654
+t_Age=demo$Age^0.3273
+t_Children=log(demo$Children)
+t_Education=demo$Education^1.221
+t_JobSat=demo$JobSat^0.2074
+t_Income=demo$Income^0.1921
+
+t_modeldemo<-with(demo,lm(t_Happy~t_Household+t_Health+t_OwnHome+t_Instagram+
+                          t_Marital+Sex+t_Age+t_Children+t_Education+
+                          t_JobSat+t_Income+WorkHrs))
+```
+
+## Summary and Plots of Transformed Model
+
+```{r}
+summary(t_modeldemo)
+par(mfrow=c(2,2))
+plot(t_modeldemo)
+```
+
+## Variable Selection Based on Full Model
+
+### Backward Selection Based on AIC
+
+```{r}
+backAICdemo <- step(modeldemo,direction="backward", data=demo)
+```
+
+### Forward Selection Based on AIC
+
+```{r}
+basedemo<- lm(Happy~1,data=demo)
+forwardAICdemo<- step(basedemo,scope=list(lower=~1,upper=~Household+Health+OwnHome
+                                          +Instagram+Marital+Sex+Age+Children
+                                          +Education+JobSat+Income+WorkHrs),
+                      direction="forward", data=demo)
+```
+
+### Backward Selection Based on BIC
+
+```{r}
+backBICdemo <- step(modeldemo,direction="backward", data=demo, k= log(12))
+```
+
+### Forward Selection Based on BIC
+
+```{r}
+basedemo<- lm(Happy~1,data=demo)
+forwardAICdemo<- step(basedemo,scope=list(lower=~1,upper=~Household+Health+OwnHome
+                                          +Instagram+Marital+Sex+Age+Children
+                                          +Education+JobSat+Income+WorkHrs), 
+                      direction="forward", data=demo, k= log(12))
+```
+
+
+## The Final Candidate Model: Model C (Since all selection results are same)
+
+
+$\hat{Happy}=1.001-0.05437*Household+0.1877*Health+0.1034*OwnHome+0.07328*Instagram+0.05433*Marital+0.0165*Children+0.132*JobSat-0.000002*Income-0.004084*WorkHrs$
+
+
+```{r}
+modelfinal<-with(demo,lm(Happy~Household+Health+OwnHome+Instagram+
+                          Marital+Children+JobSat+Income+WorkHrs))
+par(mfrow=c(2,2))
+plot(modelfinal)
+summary(modelfinal)
+```
+
+## Partial F-test for the candidate model and full model
+
+
+```{r}
+anova(modelfinal,modeldemo)
+```
+
+The p-value shows that our reduced model is significant under a 0.05 significant level.
+
+## Extra: Model A: Based on the dataset where "Don't know" and "Not Answered" are filtered 
+
+$\hat{Happy}=\beta_0-\beta_1*Household+\beta_2*Health+\beta_3*OwnHome+\beta_4*Instagram+\beta_5*Marital+\\x\beta_6*Sex+\beta_7*Age+\beta_8*Children+\beta_9*Education+\beta_{10}*JobSat-\beta_{11}*Income-\beta_{12}*WorkHrs$
+
+```{r}
+setwd("~/Downloads/STATS 101A")
+happy<-read.table("Happiness.txt",header=T)
+library(dplyr)
+happy2 <- happy %>% filter(Happy!=8&Happy!=9, Household!=8&Household!=9,
+                           Health!=8&Health!=9, OwnHome!=8 &OwnHome!=9, 
+                           Instagram!=8 &Instagram!=9, Marital!=9,
+                           Age!=98&Age!=99, Children!=9, Education!=98&Education!=99,
+                           JobSat!=8&JobSat!=9, Income!=999998&Income!=999999, WorkHrs!=998 &WorkHrs!=999)
+
+modelwhole<-with(happy2,lm(Happy~Household+Health+OwnHome+Instagram+
+                     Marital+Sex+Age+Children+Education+JobSat+Income+WorkHrs))
+summary(modelwhole)
+par(mfrow=c(2,2))
+plot(modelwhole)
+```
